@@ -83,16 +83,13 @@ def make_operator(rule):
 
 
 def declare_operators(data):
-    # your code here
-    # hint: call make_operator, then declare the operator to pyhop using pyhop.declare_operators(o1, o2, ..., ok)
     recipes = data['Recipes']
     final_recipes = []
     for key, recipe in recipes.items():
         temp = make_operator(recipe)
         temp.__name__ = 'op_' + str(key).replace(" ", "_")
         final_recipes.append(temp)
-    print("temp")
-    pyhop.declare_operators(final_recipes)
+    pyhop.declare_operators(*final_recipes)
 
 
 def add_heuristic(data, ID):
@@ -155,12 +152,12 @@ if __name__ == '__main__':
 
     declare_operators(data)
     declare_methods(data)
-    add_heuristic(data, 'agent')
+    # add_heuristic(data, 'agent')
 
-    pyhop.print_operators()
-    pyhop.print_methods()
+    # pyhop.print_operators()
+    # pyhop.print_methods()
 
     # Hint: verbose output can take a long time even if the solution is correct;
     # try verbose=1 if it is taking too long
     pyhop.pyhop(state, goals, verbose=3)
-# pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=3)
+    # pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=3)
