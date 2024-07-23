@@ -76,41 +76,23 @@ def produce_enough(state, ID, item, num):
 
 def produce(state, ID, item):
     if item == 'wood':
-        if state.made_wooden_axe[ID]:
-            return [('produce_wood_wooden_axe', ID)]
-        else:
-            # If we don't have an axe we should try to get stuff and make one
-            return [('produce_wood_hand', ID)] + produce(state, ID, 'plank') + produce(state, ID, 'stick') + produce(
-                state, ID, 'bench') + produce(state, ID, 'wooden_axe')
+        return [('produce_wood', ID)]
     elif item == 'wooden_axe':
-        if state.made_wooden_axe[ID]:
+        if state.made_wooden_axe[ID] is True:
             return False
         else:
-            return [('produce_plank', ID), ('produce_stick', ID), ('produce_bench', ID),
-                    ('produce_wooden_axe', ID)]
+            state.made_wooden_axe[ID] = True
+        return [('produce_wooden_axe', ID)]
     elif item == 'plank':
-        if state.wood[ID] >= 1:
-            return [('produce_plank', ID)]
-        else:
-            if state.made_wooden_axe[ID]:
-                return [('produce_wood_wooden_axe', ID)]
-            else:
-                return [('produce_wood_hand', ID)]
+        return [('produce_plank', ID)]
     elif item == 'stick':
-        if state.plank[ID] >= 2:
-            return [('produce_plank', ID), ('produce_stick', ID)]
-        else:
-            if state.made_wooden_axe[ID]:
-                return [('produce_wood_wooden_axe', ID), ('produce_plank', ID)]
-            return [('produce_wood_hand', ID), ('produce_plank', ID)]
+        return [('produce_stick', ID)]
     elif item == 'bench':
-        if state.made_bench[ID]:
+        if state.made_bench[ID] is True:
             return False
-
-        if state.plank[ID] >= 4:
-            return [('produce_plank', ID), ('produce_bench', ID)]
         else:
-            return [('produce_wood_hand', ID), ('produce_plank', ID)]
+            state.made_bench[ID] = True
+        return [('produce_bench', ID)]
     else:
         return False
 
@@ -148,12 +130,13 @@ def wooden_axe_for_wood(state, ID):
 
 # your code here
 
-pyhop.declare_methods('produce_wood_hand', punch_for_wood)
+# pyhop.declare_methods('produce_wood_hand', punch_for_wood)
+pyhop.declare_methods('produce_wood', wooden_axe_for_wood, punch_for_wood)
 pyhop.declare_methods('produce_wooden_axe', craft_wooden_axe_at_bench)
 pyhop.declare_methods('produce_plank', craft_plank)
 pyhop.declare_methods('produce_stick', craft_stick)
 pyhop.declare_methods('produce_bench', craft_bench)
-pyhop.declare_methods('produce_wood_wooden_axe', wooden_axe_for_wood)
+# pyhop.declare_methods('produce_wood_wooden_axe', wooden_axe_for_wood)
 
 '''end recipe methods'''
 
