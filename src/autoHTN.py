@@ -30,16 +30,20 @@ def make_method(name, rule):
         # Create a list of tasks that need to be done to complete the recipe
         tasks = []
 
+        # I JUST REALIZED THAT WE CAN MAKE THIS SO MUCH BETTER
+        crafting_order = ['ingot', 'coal', 'ore', 'cobble', 'stick', 'plank', 'wood']
+
         # Loop through any of the "Requires" items and call check_enough on them
         if 'Requires' in rule:
             # Loop through any of the "Requires" items and call have_enough on them
             for item, num in rule['Requires'].items():
                 tasks.append(('have_enough', ID, item, num))
 
-        # Loop through any of the "Consumes" items and call have_enough on them
+        # Check the consumed items in the order in which they are crafted
         if 'Consumes' in rule:
-            for item, num in rule['Consumes'].items():
-                tasks.append(('have_enough', ID, item, num))
+            for item in crafting_order:
+                if item in rule['Consumes']:
+                    tasks.append(('have_enough', ID, item, rule['Consumes'][item]))
 
         # Call the op method for the recipe name if it all checks out
         tasks.append(('op_' + str(name).replace(" ", "_"), ID))
@@ -70,12 +74,8 @@ def declare_methods(data):
 
     # Declare the methods to pyhop. Any methods that produce the same item should be declared together. Apparently
     # groupby is just a thing that exists? Awesome. https://www.geeksforgeeks.org/itertools-groupby-in-python/
-    for key, group in itertools.groupby(method_list, key=lambda x: x.produces):
+    for key, group in itertools.groupby(method_list, key=lambda recipe: recipe.produces):
         pyhop.declare_methods("produce_" + key, *group)
-
-
-def punch_for_wood(state, ID):
-    return [('op_punch_for_wood', ID)]
 
 
 def make_operator(rule):
@@ -139,19 +139,56 @@ def add_heuristic(data, ID):
     # do not change parameters to heuristic(), but can add more heuristic functions with the same parameters:
     # e.g. def heuristic2(...); pyhop.add_check(heuristic2)
     def heuristic(state, curr_task, tasks, plan, depth, calling_stack):
-        # Prune if we run out of time
-        if state.time[ID] < 1:
+
+        # Lets ensure that we only ever make a tool once since they cannot break. Cancel if they are already in the call stack
+        if curr_task[0] == 'produce' and curr_task[2] in data['Tools'] and curr_task in calling_stack:
             return True
 
-
-        # Prune if recursion is too deep
-        #TODO: Make this more dynamic? idk - This means only simple stuff is possible
-        if depth > 5:
+        # Trim if we are about to hit the recursion limit because that keeps happening
+        if depth > 900:
             return True
 
-        # TODO: Prune if we already have tools or something
+        # Don't try to do the same thing over and over again - doesnt work well
+        max_repetitions = 10
+        if len(calling_stack) > max_repetitions:
+            last_tasks = calling_stack[-max_repetitions:]
+            same_task_repeated = True
+            for task in last_tasks:
+                if task != curr_task:
+                    same_task_repeated = False
+                    break
+            if same_task_repeated:
+                return True
 
-        return False
+
+        # This thing loves to make tools so lets make sure we only actually make them if they are useful.
+        # I had chatGPT help me come up with how I should check these and the values for them. I could probably have done the math but they seem to work?
+        if curr_task[0] == 'produce' and curr_task[2] == 'iron_pickaxe':
+            required_ingots = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'ingot')
+            if 0 < required_ingots <= 11:
+                return True
+
+        if curr_task[0] == 'produce' and curr_task[2] == 'stone_pickaxe':
+            required_cobblestone = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'cobble')
+            if 0 < required_cobblestone <= 7:
+                return True
+
+        if curr_task[0] == 'produce' and curr_task[2] == 'wooden_axe':
+            required_wood = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'wood')
+            if 0 < required_wood <= 9:
+                return True
+
+        if curr_task[0] == 'produce' and curr_task[2] == 'stone_axe':
+            required_wood = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'wood')
+            if 0 < required_wood <= 12:
+                return True
+
+        # We don't need one for the wooden pick because it is the only way to get cobble n stuff
+
+
+
+
+
 
     pyhop.add_check(heuristic)
 
@@ -186,7 +223,7 @@ if __name__ == '__main__':
     with open(rules_filename) as f:
         data = json.load(f)
 
-    state = set_up_state(data, 'agent', time=239)  # allot time here
+    state = set_up_state(data, 'agent', time=250)  # allot time here
     goals = set_up_goals(data, 'agent')
 
     declare_operators(data)
