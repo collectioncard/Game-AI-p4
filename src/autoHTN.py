@@ -1,4 +1,4 @@
-import random
+import itertools
 
 import pyhop
 import json
@@ -23,73 +23,115 @@ def produce(state, ID, item):
 pyhop.declare_methods('produce', produce)
 
 
+# Creates a method for each recipe in the json file given the name and the rule. The method will be called the name of the recipe.
+# The method will return a list of tasks that need to be done to complete the recipe. NO OPS HERE
 def make_method(name, rule):
     def method(state, ID):
-        method_list = []
-        # Loop though the requirements and verify with check_enough
-        for req_name, req_quant in rule['Requires'].items():
-            method_list.append(('check_enough', ID, req_name, req_quant))
+        # Create a list of tasks that need to be done to complete the recipe
+        tasks = []
 
-        # loop though produces and call the op for it
-        for output_name, output_quant in rule['Produces'].items():
-            op_name = 'op_' + name.replace(' ', '_')
-            method_list.append((op_name, ID))
+        # Loop through any of the "Requires" items and call check_enough on them
+        if 'Requires' in rule:
+            # Loop through any of the "Requires" items and call have_enough on them
+            for item, num in rule['Requires'].items():
+                tasks.append(('have_enough', ID, item, num))
 
-        return method_list
+        # Loop through any of the "Consumes" items and call have_enough on them
+        if 'Consumes' in rule:
+            for item, num in rule['Consumes'].items():
+                tasks.append(('have_enough', ID, item, num))
+
+        # Call the op method for the recipe name if it all checks out
+        tasks.append(('op_' + str(name).replace(" ", "_"), ID))
+
+        return tasks
+
+    # Tag the function with the item it produces
+    method.produces = next(iter(rule['Produces']))
+
+    # Tag the function with the time it takes to produce the item
+    method.time = rule['Time']
+
+    # And now give it a cool name so I can debug without going crazy
+    method.__name__ = str(name).replace(" ", "_")
 
     return method
 
 
 def declare_methods(data):
-    # some recipes are faster than others for the same product even though they might require extra tools
-    # sort the recipes so that faster recipes go first
-    # sort the recipes based on the time it takes to complete the recipe
-    #TODO: Fix that
-    sorted_recipes = {k: v for k, v in sorted(data['Recipes'].items(), key=lambda item: item[1]['Time'])}
+    method_list = []
 
-    for recipe_name, recipe_data in sorted_recipes.items():
-        temp = make_method(str(recipe_name).replace(" ", "_"), recipe_data)
-        pyhop.declare_methods(str(recipe_name).replace(" ", "_"), temp)
+    #Create a method for each recipe in the json file
+    for recipe_name, recipe_data in data['Recipes'].items():
+        method_list.append(make_method(recipe_name, recipe_data))
+
+    # Sort the methods by the item they produce and then by the time it takes to produce
+    method_list.sort(key=lambda method: (method.produces, method.time))
+
+    # Declare the methods to pyhop. Any methods that produce the same item should be declared together. Apparently
+    # groupby is just a thing that exists? Awesome. https://www.geeksforgeeks.org/itertools-groupby-in-python/
+    for key, group in itertools.groupby(method_list, key=lambda x: x.produces):
+        pyhop.declare_methods("produce_" + key, *group)
+
+
+def punch_for_wood(state, ID):
+    return [('op_punch_for_wood', ID)]
 
 
 def make_operator(rule):
     def operator(state, ID):
-        print("Breakpoint")
-        # Loop though the requirements and verify
-        for req_name, req_quant in rule['Requires'].items():
-            if getattr(state, req_name)[ID] < req_quant:
-                return False
 
-        # Decrement anything in the consumes list
-        for consumable_name, consumable_quant in rule['Consumes'].items():
-            # if getattr(state, consumable_name)[ID] < consumable_quant:
-            # 	return False
-            curr_val = getattr(state, consumable_name)[ID]
-            new_val = curr_val - consumable_quant
-            setattr(state, consumable_name, {ID: new_val})
+        # Check if the state has enough of the required items
+        if 'Requires' in rule:
+            for item, num in rule['Requires'].items():
+                if getattr(state, item)[ID] < num:
+                    return False
 
-        # increment state by the output of the recipe
-        for out_name, out_quant in rule['Produces'].items():
-            # get the current value of the item we are going to change
-            curr_val = getattr(state, out_name)[ID]
-            new_val = curr_val + out_quant
-            setattr(state, out_name, {ID: new_val})
+        # Check if the state has enough of the consumed items
+        if 'Consumes' in rule:
+            for item, num in rule['Consumes'].items():
+                if getattr(state, item)[ID] < num:
+                    return False
 
-        # Modify the state to reflect the time taken to complete the recipe
-        getattr(state, 'time')[ID] -= rule['Time']
+        # Check if the state has enough time
+        if state.time[ID] < rule['Time']:
+            return False
+
+        # Remove the consumed items from the state
+        if 'Consumes' in rule:
+            for item, num in rule['Consumes'].items():
+                getattr(state, item)[ID] -= num
+
+        # Add the produced items to the state
+        for item, num in rule['Produces'].items():
+            getattr(state, item)[ID] += num
+
+        # Subtract the time it took to produce the items
+        state.time[ID] -= rule['Time']
+
         return state
+
+    # Tag it just like the methods for easy debugging
+    operator.produces = next(iter(rule['Produces']))
+    operator.time = rule['Time']
 
     return operator
 
 
 def declare_operators(data):
-    recipes = data['Recipes']
-    final_recipes = []
-    for key, recipe in recipes.items():
-        temp = make_operator(recipe)
-        temp.__name__ = 'op_' + str(key).replace(" ", "_")
-        final_recipes.append(temp)
-    pyhop.declare_operators(*final_recipes)
+    operator_list = []
+
+    # Create an operator for each recipe in the json file
+    for recipe_name, recipe_data in data['Recipes'].items():
+        temp_operator = make_operator(recipe_data)
+
+        #I can't pass the name without changing the sig, so....
+        temp_operator.__name__ = 'op_' + str(recipe_name).replace(" ", "_")
+
+        operator_list.append(temp_operator)
+
+    # Declare the operators to pyhop
+    pyhop.declare_operators(*operator_list)
 
 
 def add_heuristic(data, ID):
@@ -97,22 +139,19 @@ def add_heuristic(data, ID):
     # do not change parameters to heuristic(), but can add more heuristic functions with the same parameters:
     # e.g. def heuristic2(...); pyhop.add_check(heuristic2)
     def heuristic(state, curr_task, tasks, plan, depth, calling_stack):
-        # your code here
-        task = curr_task[0]
-        if task.startswith('op_'):
-            rule = task[3:].replace('_', ' ')
-            if rule in data["Recipes"]:
-                duration = data["Recipes"][rule].get("Time", 0)
-                if state.time[ID] < duration:
-                    return True
-        if depth > 10 or (len(plan) > 1 and curr_task == plan[-1]):
+        # Prune if we run out of time
+        if state.time[ID] < 1:
             return True
-        if len(calling_stack) != len(set(calling_stack)):
+
+
+        # Prune if recursion is too deep
+        #TODO: Make this more dynamic? idk - This means only simple stuff is possible
+        if depth > 5:
             return True
-        if tasks:
-            if getattr(state, tasks[0][2])[ID] >= tasks[0][3] or len(tasks):
-                return True
-        return False  # if True, prune this branch
+
+        # TODO: Prune if we already have tools or something
+
+        return False
 
     pyhop.add_check(heuristic)
 
@@ -152,7 +191,7 @@ if __name__ == '__main__':
 
     declare_operators(data)
     declare_methods(data)
-    # add_heuristic(data, 'agent')
+    add_heuristic(data, 'agent')
 
     # pyhop.print_operators()
     # pyhop.print_methods()
@@ -160,4 +199,4 @@ if __name__ == '__main__':
     # Hint: verbose output can take a long time even if the solution is correct;
     # try verbose=1 if it is taking too long
     pyhop.pyhop(state, goals, verbose=3)
-    # pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=3)
+    # pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=1)
