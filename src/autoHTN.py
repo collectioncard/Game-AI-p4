@@ -3,25 +3,19 @@ import itertools
 import pyhop
 import json
 
-
 def check_enough(state, ID, item, num):
     if getattr(state, item)[ID] >= num: return []
     return False
 
-
 def produce_enough(state, ID, item, num):
     return [('produce', ID, item), ('have_enough', ID, item, num)]
 
-
 pyhop.declare_methods('have_enough', check_enough, produce_enough)
-
 
 def produce(state, ID, item):
     return [('produce_{}'.format(item), ID)]
 
-
 pyhop.declare_methods('produce', produce)
-
 
 # Creates a method for each recipe in the json file given the name and the rule. The method will be called the name of the recipe.
 # The method will return a list of tasks that need to be done to complete the recipe. NO OPS HERE
@@ -68,7 +62,7 @@ def declare_methods(data):
     #Create a method for each recipe in the json file
     for recipe_name, recipe_data in data['Recipes'].items():
         method_list.append(make_method(recipe_name, recipe_data))
-
+        
     # Sort the methods by the item they produce and then by the time it takes to produce
     method_list.sort(key=lambda method: (method.produces, method.time))
 
@@ -80,7 +74,6 @@ def declare_methods(data):
 
 def make_operator(rule):
     def operator(state, ID):
-
         # Check if the state has enough of the required items
         if 'Requires' in rule:
             for item, num in rule['Requires'].items():
@@ -127,7 +120,6 @@ def declare_operators(data):
 
         #I can't pass the name without changing the sig, so....
         temp_operator.__name__ = 'op_' + str(recipe_name).replace(" ", "_")
-
         operator_list.append(temp_operator)
 
     # Declare the operators to pyhop
@@ -147,7 +139,7 @@ def add_heuristic(data, ID):
         # Trim if we are about to hit the recursion limit because that keeps happening
         if depth > 900:
             return True
-
+        
         # Don't try to do the same thing over and over again - doesnt work well
         max_repetitions = 10
         if len(calling_stack) > max_repetitions:
@@ -159,7 +151,6 @@ def add_heuristic(data, ID):
                     break
             if same_task_repeated:
                 return True
-
 
         # This thing loves to make tools so lets make sure we only actually make them if they are useful.
         # I had chatGPT help me come up with how I should check these and the values for them. I could probably have done the math but they seem to work?
@@ -173,25 +164,12 @@ def add_heuristic(data, ID):
             if 0 < required_cobblestone <= 7:
                 return True
 
-        if curr_task[0] == 'produce' and curr_task[2] == 'wooden_axe':
+        if curr_task[0] == 'produce' and (curr_task[2] == 'wooden_axe' or curr_task[2] == 'stone_axe'):
             required_wood = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'wood')
-            if 0 < required_wood <= 9:
+            if 0 < required_wood <= 9 or (0 < required_wood <= 12 and curr_task[2] == 'stone_axe'):
                 return True
-
-        if curr_task[0] == 'produce' and curr_task[2] == 'stone_axe':
-            required_wood = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'wood')
-            if 0 < required_wood <= 12:
-                return True
-
         # We don't need one for the wooden pick because it is the only way to get cobble n stuff
-
-
-
-
-
-
     pyhop.add_check(heuristic)
-
 
 def set_up_state(data, ID, time=0):
     state = pyhop.State('state')
@@ -205,7 +183,7 @@ def set_up_state(data, ID, time=0):
 
     for item, num in data['Initial'].items():
         setattr(state, item, {ID: num})
-
+        
     return state
 
 
@@ -237,3 +215,4 @@ if __name__ == '__main__':
     # try verbose=1 if it is taking too long
     pyhop.pyhop(state, goals, verbose=3)
     # pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=1)
+    
