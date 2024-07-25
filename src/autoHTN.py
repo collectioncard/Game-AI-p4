@@ -138,10 +138,6 @@ def add_heuristic(data, ID):
     # e.g. def heuristic2(...); pyhop.add_check(heuristic2)
     def heuristic(state, curr_task, tasks, plan, depth, calling_stack):
 
-        # Lets ensure that we only ever make a tool once since they cannot break. Cancel if they are already in the call stack
-        if curr_task[0] == 'produce' and curr_task[2] in data['Tools'] and curr_task in calling_stack:
-            return True
-
         # Trim if we are about to hit the recursion limit because that keeps happening
         if depth > 900:
             return True
@@ -154,26 +150,55 @@ def add_heuristic(data, ID):
             item_produced = curr_task[2]
             goals = data['Goal'].keys()
 
+            # Ensure that we only make one of each tool
+            if item_produced in data['Tools']:
+                if curr_task in calling_stack:
+                    return True
+
             # Don't trim if the goal is a tool or it'll never make it
             if item_produced in goals:
                 return False
 
             if item_produced == 'iron_pickaxe':
+
+                time_saved = {
+                    "coal": 1,
+                    "ingot": 2,
+                    "cobble": 1,
+                }
+
+                # run through everything and calculate the time saved
+                time_saved_total = 0
+                for task in filter(lambda task: task[0] == 'have_enough' and task[2] in time_saved.keys(), tasks):
+                    time_saved_total += time_saved[task[2]] * task[3]
+
                 # Check to see if we are gonna mine enough for it to matter
-                required_mining = sum(task[3] for task in filter(lambda task: task[0] == 'have_enough' and task[2] in {'ingot', 'coal', 'cobble'}, tasks))
-                if required_mining <= 11: # What you'd need for a furnace and a pickaxe anyway. If we get this far we probably need something better
+                if time_saved_total <= 18:  # Seems to be a good amount of time saved. idk
                     return True
 
             if item_produced == 'stone_pickaxe':
-                required_mining = sum(task[3] for task in filter(lambda task: task[0] == 'have_enough' and task[2] in {'cobble'}, tasks))
-                if required_mining <= 7: # If you have 7, then you are about to get a furnace. Just make a pick at that point
+                # This one is a lot easier to make so we should almost always do it. Just make it if we need to mine more than a small amount
+                required_mining = sum(
+                    task[3] for task in filter(lambda task: task[0] == 'have_enough' and task[2] in {'cobble'}, tasks))
+                if required_mining <= 7:  # If you have 7, then you are about to get a furnace. Just make a pick at that point
                     return True
 
             # We don't need one for the wooden pick because it is the only way to get cobble n stuff
 
             if item_produced in ('wooden_axe', 'stone_axe'):
-                required_wood = sum(task[3] for task in filter(lambda task: task[0] == 'have_enough' and task[2] in {'wood', 'planks'}, tasks))
-                if required_wood <= 10 or (required_wood <= 12 and item_produced == 'stone_axe'): #  This was just a guess tbh
+                required_wood = sum(task[3] for task in
+                                    filter(lambda task: task[0] == 'have_enough' and task[2] in {'wood', 'planks'},
+                                           tasks))
+                if required_wood <= 10 or (
+                        required_wood <= 12 and item_produced == 'stone_axe'):  #  This was just a guess tbh
+                    return True
+
+            if item_produced == 'iron_axe':
+                required_wood = sum(task[3] for task in
+                                    filter(lambda task: task[0] == 'have_enough' and task[2] in {'wood', 'planks'},
+                                           tasks))
+
+                if required_wood <= 20:
                     return True
 
         # Don't try to do the same thing over and over again - doesn't work well
@@ -233,5 +258,5 @@ if __name__ == '__main__':
 
     # Hint: verbose output can take a long time even if the solution is correct;
     # try verbose=1 if it is taking too long
-    pyhop.pyhop(state, goals, verbose=1)
+    pyhop.pyhop(state, goals, verbose=3)
     # pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=1)
