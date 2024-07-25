@@ -146,23 +146,17 @@ def add_heuristic(data, ID):
         if depth > 900:
             return True
 
-        # Don't try to do the same thing over and over again - doesnt work well
-        max_repetitions = 10
-        if len(calling_stack) > max_repetitions:
-            last_tasks = calling_stack[-max_repetitions:]
-            same_task_repeated = True
-            for task in last_tasks:
-                if task != curr_task:
-                    same_task_repeated = False
-                    break
-            if same_task_repeated:
-                return True
-
         # This thing loves to make tools so lets make sure we only actually make them if they are useful.
         # I had chatGPT help me come up with how I should check these and the values for them. I could probably have done the math but they seem to work?
         # https://chatgpt.com/share/28db628e-4fed-4701-b15c-025bf079b80c
+        # I've changed this a lot since then but the core idea is still the same
         if curr_task[0] == 'produce':
             item_produced = curr_task[2]
+            goals = data['Goal'].keys()
+
+            # Don't trim if the goal is a tool or it'll never make it
+            if item_produced in goals:
+                return False
 
             if item_produced == 'iron_pickaxe':
                 # Check to see if we are gonna mine enough for it to matter
@@ -182,7 +176,17 @@ def add_heuristic(data, ID):
                 if required_wood <= 10 or (required_wood <= 12 and item_produced == 'stone_axe'): #  This was just a guess tbh
                     return True
 
-
+        # Don't try to do the same thing over and over again - doesn't work well
+        max_repetitions = 10
+        if len(calling_stack) > max_repetitions:
+            last_tasks = calling_stack[-max_repetitions:]
+            same_task_repeated = True
+            for task in last_tasks:
+                if task != curr_task:
+                    same_task_repeated = False
+                    break
+            if same_task_repeated:
+                return True
 
     pyhop.add_check(heuristic)
 
@@ -217,7 +221,7 @@ if __name__ == '__main__':
     with open(rules_filename) as f:
         data = json.load(f)
 
-    state = set_up_state(data, 'agent', time=250)  # allot time here
+    state = set_up_state(data, 'agent', time=300)  # allot time here
     goals = set_up_goals(data, 'agent')
 
     declare_operators(data)
@@ -229,5 +233,5 @@ if __name__ == '__main__':
 
     # Hint: verbose output can take a long time even if the solution is correct;
     # try verbose=1 if it is taking too long
-    pyhop.pyhop(state, goals, verbose=3)
+    pyhop.pyhop(state, goals, verbose=1)
     # pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=1)
