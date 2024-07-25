@@ -3,19 +3,25 @@ import itertools
 import pyhop
 import json
 
+
 def check_enough(state, ID, item, num):
     if getattr(state, item)[ID] >= num: return []
     return False
 
+
 def produce_enough(state, ID, item, num):
     return [('produce', ID, item), ('have_enough', ID, item, num)]
 
+
 pyhop.declare_methods('have_enough', check_enough, produce_enough)
+
 
 def produce(state, ID, item):
     return [('produce_{}'.format(item), ID)]
 
+
 pyhop.declare_methods('produce', produce)
+
 
 # Creates a method for each recipe in the json file given the name and the rule. The method will be called the name of the recipe.
 # The method will return a list of tasks that need to be done to complete the recipe. NO OPS HERE
@@ -62,7 +68,7 @@ def declare_methods(data):
     #Create a method for each recipe in the json file
     for recipe_name, recipe_data in data['Recipes'].items():
         method_list.append(make_method(recipe_name, recipe_data))
-        
+
     # Sort the methods by the item they produce and then by the time it takes to produce
     method_list.sort(key=lambda method: (method.produces, method.time))
 
@@ -139,7 +145,7 @@ def add_heuristic(data, ID):
         # Trim if we are about to hit the recursion limit because that keeps happening
         if depth > 900:
             return True
-        
+
         # Don't try to do the same thing over and over again - doesnt work well
         max_repetitions = 10
         if len(calling_stack) > max_repetitions:
@@ -154,22 +160,32 @@ def add_heuristic(data, ID):
 
         # This thing loves to make tools so lets make sure we only actually make them if they are useful.
         # I had chatGPT help me come up with how I should check these and the values for them. I could probably have done the math but they seem to work?
-        if curr_task[0] == 'produce' and curr_task[2] == 'iron_pickaxe':
-            required_ingots = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'ingot')
-            if 0 < required_ingots <= 11:
-                return True
+        # https://chatgpt.com/share/28db628e-4fed-4701-b15c-025bf079b80c
+        if curr_task[0] == 'produce':
+            item_produced = curr_task[2]
 
-        if curr_task[0] == 'produce' and curr_task[2] == 'stone_pickaxe':
-            required_cobblestone = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'cobble')
-            if 0 < required_cobblestone <= 7:
-                return True
+            if item_produced == 'iron_pickaxe':
+                # Check to see if we are gonna mine enough for it to matter
+                required_mining = sum(task[3] for task in filter(lambda task: task[0] == 'have_enough' and task[2] in {'ingot', 'coal', 'cobble'}, tasks))
+                if required_mining <= 11: # What you'd need for a furnace and a pickaxe anyway. If we get this far we probably need something better
+                    return True
 
-        if curr_task[0] == 'produce' and (curr_task[2] == 'wooden_axe' or curr_task[2] == 'stone_axe'):
-            required_wood = sum(task[3] for task in tasks if task[0] == 'have_enough' and task[2] == 'wood')
-            if 0 < required_wood <= 9 or (0 < required_wood <= 12 and curr_task[2] == 'stone_axe'):
-                return True
-        # We don't need one for the wooden pick because it is the only way to get cobble n stuff
+            if item_produced == 'stone_pickaxe':
+                required_mining = sum(task[3] for task in filter(lambda task: task[0] == 'have_enough' and task[2] in {'cobble'}, tasks))
+                if required_mining <= 7: # If you have 7, then you are about to get a furnace. Just make a pick at that point
+                    return True
+
+            # We don't need one for the wooden pick because it is the only way to get cobble n stuff
+
+            if item_produced in ('wooden_axe', 'stone_axe'):
+                required_wood = sum(task[3] for task in filter(lambda task: task[0] == 'have_enough' and task[2] in {'wood', 'planks'}, tasks))
+                if required_wood <= 10 or (required_wood <= 12 and item_produced == 'stone_axe'): #  This was just a guess tbh
+                    return True
+
+
+
     pyhop.add_check(heuristic)
+
 
 def set_up_state(data, ID, time=0):
     state = pyhop.State('state')
@@ -183,7 +199,7 @@ def set_up_state(data, ID, time=0):
 
     for item, num in data['Initial'].items():
         setattr(state, item, {ID: num})
-        
+
     return state
 
 
@@ -215,4 +231,3 @@ if __name__ == '__main__':
     # try verbose=1 if it is taking too long
     pyhop.pyhop(state, goals, verbose=3)
     # pyhop.pyhop(state, [('have_enough', 'agent', 'cart', 1),('have_enough', 'agent', 'rail', 20)], verbose=1)
-    
